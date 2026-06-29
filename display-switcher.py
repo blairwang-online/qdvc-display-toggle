@@ -144,11 +144,37 @@ class DisplayPopup(Gtk.Window):
         self.selected = 1  # default highlight "Join Displays"
         self.buttons = []
 
+        # Outer vertical container: header (icon + text) on top, buttons below.
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        outer.set_margin_top(20)
+        outer.set_margin_bottom(20)
+        outer.set_margin_start(20)
+        outer.set_margin_end(20)
+
+        # MATE "Display Preferences" icon. Try the MATE-specific name first,
+        # then the generic freedesktop name, so it works across icon themes.
+        icon = Gtk.Image()
+        theme = Gtk.IconTheme.get_default()
+        for icon_name in ('mate-preferences-desktop-display',
+                          'preferences-desktop-display',
+                          'video-display'):
+            if theme.has_icon(icon_name):
+                icon.set_from_icon_name(icon_name, Gtk.IconSize.DIALOG)
+                icon.set_pixel_size(64)
+                break
+        outer.pack_start(icon, False, False, 0)
+
+        # Instruction text.
+        instructions = Gtk.Label()
+        instructions.set_markup(
+            'Use the <b>arrow keys</b> or number keys '
+            '<b>1</b>\u2013<b>4</b> to choose, then press <b>Enter</b>'
+            ' \u2014 or simply <b>click</b> an option.')
+        instructions.set_justify(Gtk.Justification.CENTER)
+        instructions.set_line_wrap(True)
+        outer.pack_start(instructions, False, False, 0)
+
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
 
         for i, mode in enumerate(self.MODES):
             btn = Gtk.Button()
@@ -167,7 +193,8 @@ class DisplayPopup(Gtk.Window):
             self.buttons.append(btn)
             box.pack_start(btn, True, True, 0)
 
-        self.add(box)
+        outer.pack_start(box, True, True, 0)
+        self.add(outer)
 
         self.connect('key-press-event', self.on_key)
         self.connect('destroy', lambda *a: Gtk.main_quit())
