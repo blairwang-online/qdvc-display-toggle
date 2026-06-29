@@ -151,6 +151,9 @@ class DisplayPopup(Gtk.Window):
         outer.set_margin_start(20)
         outer.set_margin_end(20)
 
+        # Header: icon on the left, instruction text on the right.
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+
         # MATE "Display Preferences" icon. Try the MATE-specific name first,
         # then the generic freedesktop name, so it works across icon themes.
         icon = Gtk.Image()
@@ -160,19 +163,25 @@ class DisplayPopup(Gtk.Window):
                           'video-display'):
             if theme.has_icon(icon_name):
                 icon.set_from_icon_name(icon_name, Gtk.IconSize.DIALOG)
-                icon.set_pixel_size(64)
+                icon.set_pixel_size(48)
                 break
-        outer.pack_start(icon, False, False, 0)
+        icon.set_valign(Gtk.Align.CENTER)
+        header.pack_start(icon, False, False, 0)
 
-        # Instruction text.
+        # Instruction text: narrower so it wraps onto more lines (easier scan).
         instructions = Gtk.Label()
         instructions.set_markup(
             'Use the <b>arrow keys</b> or number keys '
             '<b>1</b>\u2013<b>4</b> to choose, then press <b>Enter</b>'
             ' \u2014 or simply <b>click</b> an option.')
-        instructions.set_justify(Gtk.Justification.CENTER)
         instructions.set_line_wrap(True)
-        outer.pack_start(instructions, False, False, 0)
+        instructions.set_max_width_chars(28)
+        instructions.set_width_chars(28)
+        instructions.set_xalign(0.0)
+        instructions.set_valign(Gtk.Align.CENTER)
+        header.pack_start(instructions, True, True, 0)
+
+        outer.pack_start(header, False, False, 0)
 
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
 
