@@ -5,9 +5,10 @@ from gi.repository import Gtk, Gdk
 import subprocess
 import re
 
-# Width (px) of the instruction text block in the header. The label wraps to
-# fit this width; height grows as needed. Lower = narrower/taller.
-INSTRUCTION_WIDTH_PX = 220
+# Minimum whitespace (px) on each side of the centered icon+label header.
+# The header is centered, so this is roughly the gap left and right of it.
+# Larger value = the icon+label unit is squeezed narrower (label wraps more).
+HEADER_SIDE_PADDING_PX = 100
 
 
 def get_outputs():
@@ -155,8 +156,13 @@ class DisplayPopup(Gtk.Window):
         outer.set_margin_start(20)
         outer.set_margin_end(20)
 
-        # Header: icon on the left, instruction text on the right.
+        # Header: icon + instruction text, kept together and centered, with
+        # fixed whitespace on each side. Centering the box (halign=CENTER)
+        # stops it stretching to the full window width.
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        header.set_halign(Gtk.Align.CENTER)
+        header.set_margin_start(HEADER_SIDE_PADDING_PX)
+        header.set_margin_end(HEADER_SIDE_PADDING_PX)
 
         # MATE "Display Preferences" icon. Try the MATE-specific name first,
         # then the generic freedesktop name, so it works across icon themes.
@@ -172,15 +178,16 @@ class DisplayPopup(Gtk.Window):
         icon.set_valign(Gtk.Align.CENTER)
         header.pack_start(icon, False, False, 0)
 
-        # Instruction text: forced to a fixed width so it wraps into a
-        # narrower, taller block regardless of the button row's width.
+        # Instruction text. max_width_chars makes the label report a small
+        # preferred width, so it wraps onto multiple lines instead of taking
+        # its full natural single-line width.
         instructions = Gtk.Label()
         instructions.set_markup(
             'Use the <b>arrow keys</b> or number keys '
             '<b>1</b>\u2013<b>4</b> to choose, then press <b>Enter</b>'
             ' \u2014 or simply <b>click</b> an option.')
         instructions.set_line_wrap(True)
-        instructions.set_size_request(INSTRUCTION_WIDTH_PX, -1)
+        instructions.set_max_width_chars(24)
         instructions.set_xalign(0.0)
         instructions.set_valign(Gtk.Align.CENTER)
         header.pack_start(instructions, False, False, 0)
