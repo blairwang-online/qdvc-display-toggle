@@ -1,21 +1,12 @@
 # qdvc-display-toggle
 
-A quick display-mode switcher (e.g., for MATE desktop), filling the gap left by
-the absence of a GNOME/Windows-style **Super+P** display popup.
+A **quick and dirty, vibe-coded** (QDVC) display-mode switcher (e.g., for MATE desktop), filling the gap left by the absence of a GNOME/Windows-style **Super+P** display popup.
 
 ![Screenshot of qdvc-display-toggle](misc/qdvc-display-toggle-screenshot.png)
 
-Press your shortcut, pick a mode, done:
+On launch it auto-detects your current arrangement (best guess) and highlights the matching option.
 
-| # | Mode          | Effect                                            |
-|---|---------------|---------------------------------------------------|
-| 1 | Mirror        | Same image on every display                       |
-| 2 | Extend        | Displays joined side by side                      |
-| 3 | External Only | Built-in panel off, external display(s) on        |
-| 4 | Built-in Only | External display(s) off, built-in panel on        |
-
-On launch it auto-detects your current arrangement (best guess) and highlights
-the matching option.
+Vibe-coding details in [vibe-coding/](vibe-coding/)
 
 ## Usage
 
@@ -27,8 +18,7 @@ python3 display-switcher.py
 - Or just **click** an option.
 - **Esc** cancels.
 
-Bind `python3 /path/to/display-switcher.py` to **Super+P** in
-*System → Preferences → Hardware → Keyboard Shortcuts* for the full experience.
+Bind `python3 /path/to/display-switcher.py` to **Super+P** in *System → Preferences → Hardware → Keyboard Shortcuts* for the full experience.
 
 ## Requirements
 
