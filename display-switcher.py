@@ -4,6 +4,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk
 import subprocess
 import re
+from enum import Enum
 
 # Minimum whitespace (px) on each side of the centered icon+label header.
 # The header is centered, so this is roughly the gap left and right of it.
@@ -12,6 +13,30 @@ HEADER_SIDE_PADDING_PX = 60
 
 # Counterpart setting for the text label
 HEADER_TEXT_LABEL_SIZE = 48
+
+
+class Mode(Enum):
+    """The four display modes. The value is the user-facing label, used
+    consistently on the buttons and in the status bar."""
+    MIRROR = 'Mirror'
+    EXTEND = 'Extend'
+    EXTERNAL_ONLY = 'External Only'
+    BUILTIN_ONLY = 'Built-in Only'
+
+    @property
+    def label(self):
+        return self.value
+
+
+# Display/sequencing order. Rearrange this list to reorder the buttons and
+# the 1-4 number-key bindings; nothing else needs to change.
+MODE_ORDER = [
+    Mode.MIRROR,
+    Mode.EXTEND,
+    Mode.EXTERNAL_ONLY,
+    Mode.BUILTIN_ONLY,
+]
+
 
 def get_outputs():
     """Return (connected, primary, modes, geometry).
@@ -86,22 +111,19 @@ def pick_internal(connected):
 
 
 def detect_current_mode():
-    """Best-effort guess of the current display mode.
-
-    Returns (index, description) where index matches DisplayPopup.MODES:
-        0 = Mirror, 1 = Join Displays, 2 = External Only, 3 = Built-in Only.
+    """Best-effort guess of the current display mode. Returns a Mode.
 
     Logic:
-      - Only the external(s) active        -> External Only (2)
-      - Only the internal active           -> Built-in Only (3)
-      - Multiple active: if they share the same top-left origin (and size),
-        they're stacked on top of each other -> Mirror (0); otherwise they
-        occupy different positions -> Join Displays (1).
+      - Only the external(s) active -> EXTERNAL_ONLY
+      - Only the internal active    -> BUILTIN_ONLY
+      - Multiple active: if they share the same top-left origin they're
+        stacked on top of each other -> MIRROR; otherwise they occupy
+        different positions -> EXTEND.
     """
     connected, primary, modes, geometry = get_outputs()
 
     if not connected:
-        return 1, 'No displays detected'
+        return Mode.EXTEND
 
     internal = pick_internal(connected)
     externals = [o for o in connected if o != internal]
@@ -112,31 +134,29 @@ def detect_current_mode():
 
     # Single-display situations are unambiguous.
     if externals_on and not internal_on:
-        return 2, 'External display only'
+        return Mode.EXTERNAL_ONLY
     if internal_on and not externals_on:
-        return 3, 'Built-in display only'
+        return Mode.BUILTIN_ONLY
 
     # Multiple active outputs: distinguish mirror vs extended by geometry.
     if len(active) >= 2:
         geoms = [geometry[o] for o in active]
         origins = {(g[2], g[3]) for g in geoms}   # set of (x, y)
-        sizes = {(g[0], g[1]) for g in geoms}     # set of (w, h)
-        # Mirror = everyone sharing one origin (overlaid). Usually same size
-        # too, but origin is the reliable tell.
+        # Mirror = everyone sharing one origin (overlaid). Different origins
+        # mean the displays are placed side by side (extended).
         if len(origins) == 1:
-            if len(sizes) == 1:
-                return 0, 'Mirrored displays'
-            return 0, 'Mirrored displays (differing sizes)'
-        return 1, 'Extended displays (joined)'
+            return Mode.MIRROR
+        return Mode.EXTEND
 
-    # Fallback: nothing active, or only one connected and active.
+    # Fallback: exactly one output active.
     if len(active) == 1:
         only = active[0]
         if only == internal:
-            return 3, 'Built-in display only'
-        return 2, 'External display only'
+            return Mode.BUILTIN_ONLY
+        return Mode.EXTERNAL_ONLY
 
-    return 1, 'Could not determine current mode'
+    # Nothing active or indeterminate.
+    return Mode.EXTEND
 
 
 def apply_mode(mode):
@@ -148,7 +168,7 @@ def apply_mode(mode):
 
     cmd = ['xrandr']
 
-    if mode == 'Mirror':
+    if mode is Mode.MIRROR:
         # Mirror requires every output at the SAME resolution and origin.
         # --auto picks each panel's native mode independently, so if they
         # differ, xrandr can't overlay them. Pick a shared resolution.
@@ -163,7 +183,7 @@ def apply_mode(mode):
             if o != connected[0]:
                 cmd += ['--same-as', connected[0]]
 
-    elif mode == 'Join Displays':
+    elif mode is Mode.EXTEND:
         prev = None
         for o in connected:
             cmd += ['--output', o, '--auto']
@@ -171,7 +191,7 @@ def apply_mode(mode):
                 cmd += ['--right-of', prev]
             prev = o
 
-    elif mode == 'External Only':
+    elif mode is Mode.EXTERNAL_ONLY:
         if not externals:
             return
         for o in externals:
@@ -180,7 +200,7 @@ def apply_mode(mode):
         # primary on first external
         cmd += ['--output', externals[0], '--primary']
 
-    elif mode == 'Built-in Only':
+    elif mode is Mode.BUILTIN_ONLY:
         cmd += ['--output', internal, '--auto', '--primary']
         for o in externals:
             cmd += ['--output', o, '--off']
@@ -193,7 +213,7 @@ def apply_mode(mode):
             modal=True,
             message_type=Gtk.MessageType.ERROR,
             buttons=Gtk.ButtonsType.OK,
-            text='Could not apply "{}"'.format(mode),
+            text='Could not apply "{}"'.format(mode.label),
         )
         dialog.format_secondary_text(
             '{}\n\nCommand:\n{}'.format(msg, ' '.join(cmd)))
@@ -202,8 +222,6 @@ def apply_mode(mode):
 
 
 class DisplayPopup(Gtk.Window):
-    MODES = ['Mirror', 'Join Displays', 'External Only', 'Built-in Only']
-
     def __init__(self):
         # TOPLEVEL window so keyboard focus is grabbed reliably.
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
@@ -213,8 +231,11 @@ class DisplayPopup(Gtk.Window):
         self.set_resizable(False)
 
         # Detect the current arrangement and default the highlight to it.
-        detected_index, detected_desc = detect_current_mode()
-        self.selected = detected_index
+        detected_mode = detect_current_mode()
+        try:
+            self.selected = MODE_ORDER.index(detected_mode)
+        except ValueError:
+            self.selected = 0
         self.buttons = []
 
         # Outer vertical container: header (icon + text) on top, buttons below.
@@ -264,14 +285,14 @@ class DisplayPopup(Gtk.Window):
 
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
 
-        for i, mode in enumerate(self.MODES):
+        for i, mode in enumerate(MODE_ORDER):
             btn = Gtk.Button()
 
             inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
             num = Gtk.Label()
             num.set_markup(
                 '<span size="36000" weight="bold">{}</span>'.format(i + 1))
-            name = Gtk.Label(label=mode)
+            name = Gtk.Label(label=mode.label)
             inner.pack_start(num, True, True, 0)
             inner.pack_start(name, False, False, 0)
             btn.add(inner)
@@ -283,11 +304,18 @@ class DisplayPopup(Gtk.Window):
 
         outer.pack_start(box, True, True, 0)
 
-        # Status bar: report the heuristically detected current mode.
+        # Status bar: report the heuristically detected current mode. A
+        # Statusbar wraps a single label inside its message area; we set that
+        # label directly so we can centre it and use italic markup (Statusbar's
+        # own push() escapes markup, so we don't use it for display).
         self.statusbar = Gtk.Statusbar()
-        self.status_ctx = self.statusbar.get_context_id('current-mode')
-        self.statusbar.push(
-            self.status_ctx, 'Current setting: {}'.format(detected_desc))
+        status_label = self.statusbar.get_message_area().get_children()[0]
+        status_label.set_halign(Gtk.Align.CENTER)
+        status_label.set_hexpand(True)
+        status_label.set_justify(Gtk.Justification.CENTER)
+        status_label.set_markup(
+            '<i>Auto-detected current setting (best guess): '
+            '{}</i>'.format(detected_mode.label))
         outer.pack_start(self.statusbar, False, False, 0)
 
         self.add(outer)
@@ -302,13 +330,13 @@ class DisplayPopup(Gtk.Window):
                 btn.grab_focus()
 
     def on_button_clicked(self, widget, index):
-        mode = self.MODES[index]
+        mode = MODE_ORDER[index]
         self.hide()
         apply_mode(mode)
         Gtk.main_quit()
 
     def activate_selected(self):
-        mode = self.MODES[self.selected]
+        mode = MODE_ORDER[self.selected]
         self.hide()
         apply_mode(mode)
         Gtk.main_quit()
@@ -325,15 +353,17 @@ class DisplayPopup(Gtk.Window):
         }
 
         if key in number_keys:
-            self.selected = number_keys[key]
-            self.update_highlight()
+            idx = number_keys[key]
+            if idx < len(MODE_ORDER):
+                self.selected = idx
+                self.update_highlight()
             return True
         elif key in (Gdk.KEY_Right, Gdk.KEY_Tab):
-            self.selected = (self.selected + 1) % len(self.MODES)
+            self.selected = (self.selected + 1) % len(MODE_ORDER)
             self.update_highlight()
             return True
         elif key in (Gdk.KEY_Left, Gdk.KEY_ISO_Left_Tab):
-            self.selected = (self.selected - 1) % len(self.MODES)
+            self.selected = (self.selected - 1) % len(MODE_ORDER)
             self.update_highlight()
             return True
         elif key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
