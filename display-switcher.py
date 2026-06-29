@@ -74,15 +74,16 @@ class DisplayPopup(Gtk.Window):
     MODES = ['Mirror', 'Join Displays', 'External Only', 'Built-in Only']
 
     def __init__(self):
-        super().__init__(type=Gtk.WindowType.POPUP)
+        # TOPLEVEL window so keyboard focus is grabbed reliably.
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_title('Display Mode')
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
-        self.set_decorated(False)
         self.set_keep_above(True)
+        self.set_resizable(False)
 
         self.selected = 1  # default highlight "Join Displays"
         self.buttons = []
 
-        frame = Gtk.Frame()
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         box.set_margin_top(20)
         box.set_margin_bottom(20)
@@ -90,54 +91,81 @@ class DisplayPopup(Gtk.Window):
         box.set_margin_end(20)
 
         for i, mode in enumerate(self.MODES):
-            lbl = Gtk.Label(label=mode)
-            lbl.set_size_request(120, 80)
-            eb = Gtk.EventBox()
-            eb.add(lbl)
-            self.buttons.append(eb)
-            box.pack_start(eb, True, True, 0)
+            btn = Gtk.Button()
 
-        frame.add(box)
-        self.add(frame)
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            num = Gtk.Label()
+            num.set_markup(
+                '<span size="36000" weight="bold">{}</span>'.format(i + 1))
+            name = Gtk.Label(label=mode)
+            inner.pack_start(num, True, True, 0)
+            inner.pack_start(name, False, False, 0)
+            btn.add(inner)
+
+            btn.set_size_request(140, 110)
+            btn.connect('clicked', self.on_button_clicked, i)
+            self.buttons.append(btn)
+            box.pack_start(btn, True, True, 0)
+
+        self.add(box)
 
         self.connect('key-press-event', self.on_key)
-        self.connect('focus-out-event', lambda *a: Gtk.main_quit())
+        self.connect('destroy', lambda *a: Gtk.main_quit())
         self.update_highlight()
 
     def update_highlight(self):
-        for i, eb in enumerate(self.buttons):
-            ctx = eb.get_style_context()
+        for i, btn in enumerate(self.buttons):
             if i == self.selected:
-                eb.override_background_color(
-                    Gtk.StateFlags.NORMAL, Gdk.RGBA(0.2, 0.5, 0.9, 1))
-            else:
-                eb.override_background_color(
-                    Gtk.StateFlags.NORMAL, Gdk.RGBA(0, 0, 0, 0))
+                btn.grab_focus()
+
+    def on_button_clicked(self, widget, index):
+        mode = self.MODES[index]
+        self.hide()
+        apply_mode(mode)
+        Gtk.main_quit()
+
+    def activate_selected(self):
+        mode = self.MODES[self.selected]
+        self.hide()
+        apply_mode(mode)
+        Gtk.main_quit()
 
     def on_key(self, widget, event):
         key = event.keyval
-        if key in (Gdk.KEY_Right, Gdk.KEY_Tab):
+
+        # Number keys 1-4 (top row and keypad) highlight, do not activate.
+        number_keys = {
+            Gdk.KEY_1: 0, Gdk.KEY_KP_1: 0,
+            Gdk.KEY_2: 1, Gdk.KEY_KP_2: 1,
+            Gdk.KEY_3: 2, Gdk.KEY_KP_3: 2,
+            Gdk.KEY_4: 3, Gdk.KEY_KP_4: 3,
+        }
+
+        if key in number_keys:
+            self.selected = number_keys[key]
+            self.update_highlight()
+            return True
+        elif key in (Gdk.KEY_Right, Gdk.KEY_Tab):
             self.selected = (self.selected + 1) % len(self.MODES)
             self.update_highlight()
-        elif key == Gdk.KEY_Left:
+            return True
+        elif key in (Gdk.KEY_Left, Gdk.KEY_ISO_Left_Tab):
             self.selected = (self.selected - 1) % len(self.MODES)
             self.update_highlight()
+            return True
         elif key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
-            mode = self.MODES[self.selected]
-            self.hide()
-            apply_mode(mode)
-            Gtk.main_quit()
+            self.activate_selected()
+            return True
         elif key == Gdk.KEY_Escape:
             Gtk.main_quit()
-        return True
+            return True
+        return False
 
 
 def main():
     win = DisplayPopup()
     win.show_all()
-    win.grab_focus()
-    # Ensure keyboard focus on a POPUP window.
-    win.get_window().focus(Gdk.CURRENT_TIME)
+    win.present()
     Gtk.main()
 
 
