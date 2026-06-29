@@ -8,8 +8,10 @@ import re
 # Minimum whitespace (px) on each side of the centered icon+label header.
 # The header is centered, so this is roughly the gap left and right of it.
 # Larger value = the icon+label unit is squeezed narrower (label wraps more).
-HEADER_SIDE_PADDING_PX = 100
+HEADER_SIDE_PADDING_PX = 60
 
+# Counterpart setting for the text label
+HEADER_TEXT_LABEL_SIZE = 48
 
 def get_outputs():
     """Return (connected, primary, modes).
@@ -187,7 +189,7 @@ class DisplayPopup(Gtk.Window):
             '<b>1</b>\u2013<b>4</b> to choose, then press <b>Enter</b>'
             ' \u2014 or simply <b>click</b> an option.')
         instructions.set_line_wrap(True)
-        instructions.set_max_width_chars(24)
+        instructions.set_max_width_chars(HEADER_TEXT_LABEL_SIZE)
         instructions.set_xalign(0.0)
         instructions.set_valign(Gtk.Align.CENTER)
         header.pack_start(instructions, False, False, 0)
