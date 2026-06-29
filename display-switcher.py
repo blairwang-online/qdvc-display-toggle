@@ -7,19 +7,57 @@ import re
 
 
 def get_outputs():
-    """Return (connected_outputs, primary). Connected = plugged in."""
+    """Return (connected, primary, modes).
+
+    connected: list of connected output names (plugged in).
+    primary:   name of the primary output (or first connected).
+    modes:     dict mapping output name -> list of "WxH" mode strings,
+               in xrandr's listed order (preferred/native first).
+    """
     out = subprocess.check_output(['xrandr', '--query']).decode()
     connected = []
     primary = None
+    modes = {}
+    current = None
     for line in out.splitlines():
         m = re.match(r'^(\S+)\s+connected\s*(primary)?', line)
         if m:
-            connected.append(m.group(1))
+            current = m.group(1)
+            connected.append(current)
+            modes[current] = []
             if m.group(2):
-                primary = m.group(1)
+                primary = current
+            continue
+        # A disconnected output resets context so we don't attach modes to it.
+        if re.match(r'^\S+\s+disconnected', line):
+            current = None
+            continue
+        # Mode lines are indented and start with a resolution like 1920x1080.
+        mm = re.match(r'^\s+(\d+x\d+)', line)
+        if mm and current is not None:
+            modes[current].append(mm.group(1))
     if primary is None and connected:
         primary = connected[0]
-    return connected, primary
+    return connected, primary, modes
+
+
+def common_mode(connected, modes):
+    """Find a resolution every connected output supports.
+
+    Prefer the largest by pixel area. Returns a "WxH" string or None.
+    """
+    if not connected:
+        return None
+    sets = [set(modes.get(o, [])) for o in connected]
+    shared = set.intersection(*sets) if sets else set()
+    if not shared:
+        return None
+
+    def area(res):
+        w, h = res.split('x')
+        return int(w) * int(h)
+
+    return max(shared, key=area)
 
 
 def pick_internal(connected):
@@ -31,7 +69,7 @@ def pick_internal(connected):
 
 
 def apply_mode(mode):
-    connected, primary = get_outputs()
+    connected, primary, modes = get_outputs()
     if len(connected) < 1:
         return
     internal = pick_internal(connected)
@@ -40,10 +78,19 @@ def apply_mode(mode):
     cmd = ['xrandr']
 
     if mode == 'Mirror':
-        # Mirror everything onto the internal (or first) output position.
-        base = internal or connected[0]
+        # Mirror requires every output at the SAME resolution and origin.
+        # --auto picks each panel's native mode independently, so if they
+        # differ, xrandr can't overlay them. Pick a shared resolution.
+        res = common_mode(connected, modes)
         for o in connected:
-            cmd += ['--output', o, '--auto', '--same-as', base]
+            cmd += ['--output', o]
+            if res:
+                cmd += ['--mode', res]
+            else:
+                cmd += ['--auto']
+            cmd += ['--pos', '0x0']
+            if o != connected[0]:
+                cmd += ['--same-as', connected[0]]
 
     elif mode == 'Join Displays':
         prev = None
@@ -67,7 +114,20 @@ def apply_mode(mode):
         for o in externals:
             cmd += ['--output', o, '--off']
 
-    subprocess.run(cmd)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        msg = result.stderr.strip() or 'xrandr failed with no message.'
+        dialog = Gtk.MessageDialog(
+            transient_for=None,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text='Could not apply "{}"'.format(mode),
+        )
+        dialog.format_secondary_text(
+            '{}\n\nCommand:\n{}'.format(msg, ' '.join(cmd)))
+        dialog.run()
+        dialog.destroy()
 
 
 class DisplayPopup(Gtk.Window):
