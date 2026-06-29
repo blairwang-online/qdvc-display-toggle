@@ -14,17 +14,21 @@ HEADER_SIDE_PADDING_PX = 60
 HEADER_TEXT_LABEL_SIZE = 48
 
 def get_outputs():
-    """Return (connected, primary, modes).
+    """Return (connected, primary, modes, geometry).
 
     connected: list of connected output names (plugged in).
     primary:   name of the primary output (or first connected).
     modes:     dict mapping output name -> list of "WxH" mode strings,
                in xrandr's listed order (preferred/native first).
+    geometry:  dict mapping output name -> (w, h, x, y) if the output is
+               currently active (has a mode set), else None. Used to detect
+               the current display arrangement on startup.
     """
     out = subprocess.check_output(['xrandr', '--query']).decode()
     connected = []
     primary = None
     modes = {}
+    geometry = {}
     current = None
     for line in out.splitlines():
         m = re.match(r'^(\S+)\s+connected\s*(primary)?', line)
@@ -32,8 +36,14 @@ def get_outputs():
             current = m.group(1)
             connected.append(current)
             modes[current] = []
+            geometry[current] = None
             if m.group(2):
                 primary = current
+            # An active output reports its current mode+position as e.g.
+            # "1920x1080+0+0" on the same line; an inactive one does not.
+            g = re.search(r'(\d+)x(\d+)\+(\d+)\+(\d+)', line)
+            if g:
+                geometry[current] = tuple(int(v) for v in g.groups())
             continue
         # A disconnected output resets context so we don't attach modes to it.
         if re.match(r'^\S+\s+disconnected', line):
@@ -45,7 +55,7 @@ def get_outputs():
             modes[current].append(mm.group(1))
     if primary is None and connected:
         primary = connected[0]
-    return connected, primary, modes
+    return connected, primary, modes, geometry
 
 
 def common_mode(connected, modes):
@@ -75,8 +85,62 @@ def pick_internal(connected):
     return connected[0] if connected else None
 
 
+def detect_current_mode():
+    """Best-effort guess of the current display mode.
+
+    Returns (index, description) where index matches DisplayPopup.MODES:
+        0 = Mirror, 1 = Join Displays, 2 = External Only, 3 = Built-in Only.
+
+    Logic:
+      - Only the external(s) active        -> External Only (2)
+      - Only the internal active           -> Built-in Only (3)
+      - Multiple active: if they share the same top-left origin (and size),
+        they're stacked on top of each other -> Mirror (0); otherwise they
+        occupy different positions -> Join Displays (1).
+    """
+    connected, primary, modes, geometry = get_outputs()
+
+    if not connected:
+        return 1, 'No displays detected'
+
+    internal = pick_internal(connected)
+    externals = [o for o in connected if o != internal]
+
+    active = [o for o in connected if geometry.get(o) is not None]
+    internal_on = geometry.get(internal) is not None
+    externals_on = [o for o in externals if geometry.get(o) is not None]
+
+    # Single-display situations are unambiguous.
+    if externals_on and not internal_on:
+        return 2, 'External display only'
+    if internal_on and not externals_on:
+        return 3, 'Built-in display only'
+
+    # Multiple active outputs: distinguish mirror vs extended by geometry.
+    if len(active) >= 2:
+        geoms = [geometry[o] for o in active]
+        origins = {(g[2], g[3]) for g in geoms}   # set of (x, y)
+        sizes = {(g[0], g[1]) for g in geoms}     # set of (w, h)
+        # Mirror = everyone sharing one origin (overlaid). Usually same size
+        # too, but origin is the reliable tell.
+        if len(origins) == 1:
+            if len(sizes) == 1:
+                return 0, 'Mirrored displays'
+            return 0, 'Mirrored displays (differing sizes)'
+        return 1, 'Extended displays (joined)'
+
+    # Fallback: nothing active, or only one connected and active.
+    if len(active) == 1:
+        only = active[0]
+        if only == internal:
+            return 3, 'Built-in display only'
+        return 2, 'External display only'
+
+    return 1, 'Could not determine current mode'
+
+
 def apply_mode(mode):
-    connected, primary, modes = get_outputs()
+    connected, primary, modes, geometry = get_outputs()
     if len(connected) < 1:
         return
     internal = pick_internal(connected)
@@ -148,7 +212,9 @@ class DisplayPopup(Gtk.Window):
         self.set_keep_above(True)
         self.set_resizable(False)
 
-        self.selected = 1  # default highlight "Join Displays"
+        # Detect the current arrangement and default the highlight to it.
+        detected_index, detected_desc = detect_current_mode()
+        self.selected = detected_index
         self.buttons = []
 
         # Outer vertical container: header (icon + text) on top, buttons below.
@@ -216,6 +282,14 @@ class DisplayPopup(Gtk.Window):
             box.pack_start(btn, True, True, 0)
 
         outer.pack_start(box, True, True, 0)
+
+        # Status bar: report the heuristically detected current mode.
+        self.statusbar = Gtk.Statusbar()
+        self.status_ctx = self.statusbar.get_context_id('current-mode')
+        self.statusbar.push(
+            self.status_ctx, 'Current setting: {}'.format(detected_desc))
+        outer.pack_start(self.statusbar, False, False, 0)
+
         self.add(outer)
 
         self.connect('key-press-event', self.on_key)
