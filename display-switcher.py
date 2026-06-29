@@ -5,6 +5,10 @@ from gi.repository import Gtk, Gdk
 import subprocess
 import re
 
+# Width (px) of the instruction text block in the header. The label wraps to
+# fit this width; height grows as needed. Lower = narrower/taller.
+INSTRUCTION_WIDTH_PX = 220
+
 
 def get_outputs():
     """Return (connected, primary, modes).
@@ -168,18 +172,18 @@ class DisplayPopup(Gtk.Window):
         icon.set_valign(Gtk.Align.CENTER)
         header.pack_start(icon, False, False, 0)
 
-        # Instruction text: narrower so it wraps onto more lines (easier scan).
+        # Instruction text: forced to a fixed width so it wraps into a
+        # narrower, taller block regardless of the button row's width.
         instructions = Gtk.Label()
         instructions.set_markup(
             'Use the <b>arrow keys</b> or number keys '
             '<b>1</b>\u2013<b>4</b> to choose, then press <b>Enter</b>'
             ' \u2014 or simply <b>click</b> an option.')
         instructions.set_line_wrap(True)
-        instructions.set_max_width_chars(28)
-        instructions.set_width_chars(28)
+        instructions.set_size_request(INSTRUCTION_WIDTH_PX, -1)
         instructions.set_xalign(0.0)
         instructions.set_valign(Gtk.Align.CENTER)
-        header.pack_start(instructions, True, True, 0)
+        header.pack_start(instructions, False, False, 0)
 
         outer.pack_start(header, False, False, 0)
 
