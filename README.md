@@ -1,7 +1,9 @@
-# qdvc-mate-display-toggle
+# qdvc-display-toggle
 
-A quick display-mode switcher for the **MATE** desktop, filling the gap left by
+A quick display-mode switcher (e.g., for MATE desktop), filling the gap left by
 the absence of a GNOME/Windows-style **Super+P** display popup.
+
+![Screenshot of qdvc-display-toggle](misc/qdvc-display-toggle-screenshot.png)
 
 Press your shortcut, pick a mode, done:
 
